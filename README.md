@@ -10,5 +10,7 @@ assumes that there is a running and accessible binder that runs the
 "hello" binding example.
 
 
+It relies on the following external packages:
 
-
+* ratchet/pawl
+* react/promise
