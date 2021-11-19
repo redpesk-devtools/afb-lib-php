@@ -1,5 +1,6 @@
 <?php
 
+use Amp\Deferred;
 use Amp\Producer;
 use Amp\Promise;
 use Amp\Websocket\Client\Connection;
@@ -15,7 +16,15 @@ class AFBWebsocket
 {
     const CALL = 2, RETOK = 3, RETERR = 4, EVENT = 5, PROTO1 = "x-afb-ws-json1";
 
-    public Connection $connection;
+    /**
+     * @var Connection to websocket
+     */
+    private Connection $connection;
+
+    /**
+     * @var array
+     */
+    private array $pendingRequests;
 
     /**
      * Open connection to afb-binder.
@@ -35,17 +44,20 @@ class AFBWebsocket
     /**
      * Send request to afb-binder.
      *
-     * @param string $method
-     * @param array $data
-     * @return string AFB binder request id
+     * @param AFBRequest $request
+     * @return AFBRequest The request being processed by the server.
      * @throws ClosedException
      */
-    public function send(string $method, array $data): string
+    public function send(AFBRequest $request): AFBRequest
     {
-        $id = uniqid();
-        $call = [self::CALL, $id, $method, $data];
-        $this->connection->send(json_encode($call, JSON_UNESCAPED_SLASHES));
-        return $id;
+        $request->setId(uniqid());
+        $this->connection->send(json_encode($request->getCall(), JSON_UNESCAPED_SLASHES));
+
+        $deferred = new Deferred();
+        $this->pendingRequests[$request->getId()] = $deferred;
+        $request->setPromise($deferred->promise());
+
+        return $request;
     }
 
     /**
@@ -57,7 +69,21 @@ class AFBWebsocket
     {
         return new Producer(function (callable $emit) {
             while ($message = yield $this->connection->receive()) {
-                yield $emit(json_decode(yield $message->buffer(), JSON_UNESCAPED_SLASHES));
+                $response = AFBResponse::fromJson(yield $message->buffer());
+
+                /** @var Deferred $deferred */
+                if (array_key_exists($response->getId(), $this->pendingRequests)
+                    && $deferred = $this->pendingRequests[$response->getId()]) {
+
+                    if ($response->getCode() !== AFBWebsocket::RETOK) {
+                        // Todo : maybe it would be better to have an exception to retrieve the server response.
+                        $deferred->fail(new Exception("Bad response from server."));
+                    } else {
+                        $deferred->resolve($response);
+                    }
+                }
+
+                yield $emit($response);
             }
         });
     }
@@ -67,6 +93,7 @@ class AFBWebsocket
      *
      * @param array $message
      * @return int
+     * @deprecated use AFBResponse instead
      */
     public function getMessageStatus(array $message): int
     {

@@ -39,18 +39,14 @@ final class AFBWebsocketTest extends AsyncTestCase
         $afb = new AFBWebsocket();
         yield $afb->connect('ws://localhost:21213/api');
 
-        $requestId = $afb->send('hello/call', ['class' => 'a']);
-
-        $messages = $afb->receive();
-        while (yield $messages->advance()) {
-            $message = $messages->getCurrent();
-
-            list(, $id) = $message;
-            if ($id === $requestId) {
-                $this->onAssert(function () use ($afb, $message) {
-                    $this->assertSame($afb->getMessageStatus($message), AFBWebsocket::RETERR);
+        $afb
+            ->send(new AFBRequest('hello/call', ['class' => 'a']))
+            ->getPromise()->onResolve(function ($response) use ($afb) {
+                $this->onAssert(function () use($response) {
+                    $this->assertSame($response->getCode(), AFBWebsocket::RETERR);
                 }, [$afb, 'close']);
-            }
-        }
+            });
+
+        $afb->receive();
     }
 }
