@@ -3,9 +3,9 @@
 class AFBResponse
 {
     /**
-     * @var int|null
+     * @var string|null
      */
-    private ?int $id;
+    private ?string $id;
 
     /**
      * @var int
@@ -23,11 +23,11 @@ class AFBResponse
     private ?AFBRequest $request;
 
     /**
-     * @param int|null $id
+     * @param string|null $id
      * @param int $code
      * @param array $data
      */
-    public function __construct(?int $id, int $code, array $data)
+    public function __construct(?string $id, int $code, array $data)
     {
         $this->id = $id;
         $this->code = $code;
@@ -35,18 +35,18 @@ class AFBResponse
     }
 
     /**
-     * @return int|null
+     * @return string|null
      */
-    public function getId(): ?int
+    public function getId(): ?string
     {
         return $this->id;
     }
 
     /**
-     * @param int|null $id
+     * @param string|null $id
      * @return AFBResponse
      */
-    public function setId(?int $id): AFBResponse
+    public function setId(?string $id): AFBResponse
     {
         $this->id = $id;
         return $this;

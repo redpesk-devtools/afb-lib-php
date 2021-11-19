@@ -7,6 +7,9 @@ use Amp\Websocket\Client\Connection;
 use Amp\Websocket\Client\ConnectionException;
 use Amp\Websocket\Client\Handshake;
 use Amp\Websocket\ClosedException;
+use function Amp\asyncCall;
+use function Amp\call;
+use function Amp\Iterator\map;
 use function Amp\Websocket\Client\connect;
 
 /**
@@ -31,7 +34,7 @@ class AFBWebsocket
      */
     public function connect(string $uri): Promise
     {
-        return Amp\call(function () use ($uri) {
+        return call(function () use ($uri) {
             try {
                 $this->connection = yield connect(new Handshake($uri, null, ['Sec-WebSocket-Protocol' => self::PROTO1]));
             } catch (ConnectionException $e) {
@@ -45,59 +48,56 @@ class AFBWebsocket
      * Send request to afb-binder.
      *
      * @param AFBRequest $request
-     * @return AFBRequest The request being processed by the server.
+     * @return Promise
      * @throws ClosedException
      */
-    public function send(AFBRequest $request): AFBRequest
+    public function send(AFBRequest $request): Promise
     {
         $request->setId(uniqid());
+
         $this->connection->send(json_encode($request->getCall(), JSON_UNESCAPED_SLASHES));
 
         $deferred = new Deferred();
         $this->pendingRequests[$request->getId()] = $deferred;
         $request->setPromise($deferred->promise());
 
-        return $request;
+        return $request->getPromise();
     }
 
     /**
-     * Produce a message each time server sent message.
+     * Produce a message each time the server sent message.
      *
      * @return Producer
      */
-    public function receive(): Producer
+    private function receive(): Producer
     {
         return new Producer(function (callable $emit) {
             while ($message = yield $this->connection->receive()) {
-                $response = AFBResponse::fromJson(yield $message->buffer());
-
-                /** @var Deferred $deferred */
-                if (array_key_exists($response->getId(), $this->pendingRequests)
-                    && $deferred = $this->pendingRequests[$response->getId()]) {
-
-                    if ($response->getCode() !== AFBWebsocket::RETOK) {
-                        // Todo : maybe it would be better to have an exception to retrieve the server response.
-                        $deferred->fail(new Exception("Bad response from server."));
-                    } else {
-                        $deferred->resolve($response);
-                    }
-                }
-
-                yield $emit($response);
+                yield $emit(AFBResponse::fromJson(yield $message->buffer()));
             }
         });
     }
 
     /**
-     * Extract the status of the message.
-     *
-     * @param array $message
-     * @return int
-     * @deprecated use AFBResponse instead
+     * Handle responses from server.
+     * Need to be called in Event loop.
+     * @throws Throwable
      */
-    public function getMessageStatus(array $message): int
+    public function handleResponses()
     {
-        return count($message) > 0 ? $message[0] : self::RETERR;
+        asyncCall(function () {
+            yield map($this->receive(), function (AFBResponse $response) {
+                /** @var Deferred $deferred */
+                if (array_key_exists($response->getId(), $this->pendingRequests)
+                    && $deferred = $this->pendingRequests[$response->getId()]) {
+                    if ($response->getCode() !== AFBWebsocket::RETOK) {
+                        $deferred->fail(new AFBResponseException($response));
+                    } else {
+                        $deferred->resolve($response);
+                    }
+                }
+            })->advance();
+        });
     }
 
     /**

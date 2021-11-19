@@ -8,9 +8,9 @@ use Amp\Promise;
 class AFBRequest
 {
     /**
-     * @var int|null
+     * @var string|null
      */
-    private ?int $id;
+    private ?string $id;
 
     /**
      * @var string
@@ -38,18 +38,18 @@ class AFBRequest
     }
 
     /**
-     * @return int|null
+     * @return string|null
      */
-    public function getId(): ?int
+    public function getId(): ?string
     {
         return $this->id;
     }
 
     /**
-     * @param int|null $id
+     * @param string|null $id
      * @return AFBRequest
      */
-    public function setId(?int $id): AFBRequest
+    public function setId(?string $id): AFBRequest
     {
         $this->id = $id;
         return $this;
